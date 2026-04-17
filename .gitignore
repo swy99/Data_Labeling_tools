@@ -9,3 +9,11 @@
 !batch_depth.py.txt
 !viewer/
 !viewer/**
+
+# 빌드 캐시 제외
+viewer/__pycache__/
+viewer/**/__pycache__/
+viewer/**/*.pyc
+viewer/tasks.md
+viewer/architecture.md
+viewer/tests/
