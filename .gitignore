@@ -9,6 +9,7 @@
 !batch_depth.py.txt
 !viewer/
 !viewer/**
+!export_labels.py
 
 # 빌드 캐시 제외
 viewer/__pycache__/
