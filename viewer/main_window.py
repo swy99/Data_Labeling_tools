@@ -12,9 +12,6 @@ import numpy as np
 from PyQt6.QtWidgets import (
     QMainWindow,
     QSplitter,
-    QVBoxLayout,
-    QWidget,
-    QStatusBar,
 )
 from PyQt6.QtCore import Qt, QTimer
 
@@ -23,7 +20,7 @@ from data_index import DataIndex
 from image_loader import ImageLoader
 from overlay_renderer import OverlayRenderer
 from browser_widget import BrowserWidget
-from viewer_widget import ViewerWidget, OverlayControlWidget
+from viewer_widget import ViewerWidget, LayerControlPanel
 
 
 class MainWindow(QMainWindow):
@@ -61,68 +58,58 @@ class MainWindow(QMainWindow):
         self._current_sort: str = cfg.ui.default_sort
 
         # ------------------------------------------------------------------ #
-        # Widgets — 4-panel grid: Overlay, RGB, Seg, Depth
+        # Widgets
+        #   Panel 1 (top-left):  composite overlay
+        #   Panel 2 (top-right): layer control — RGB/Depth/Seg previews + sliders
+        #   Panel 3 (bot-left):  segmentation only
+        #   Panel 4 (bot-right): depth only
         # ------------------------------------------------------------------ #
         self._browser = BrowserWidget()
 
-        self._panel_overlay = ViewerWidget()
-        self._panel_rgb     = ViewerWidget()
-        self._panel_seg     = ViewerWidget()
-        self._panel_depth   = ViewerWidget()
-
-        self._controls = OverlayControlWidget(
+        self._panel_overlay     = ViewerWidget()
+        self._panel_layer_ctrl  = LayerControlPanel(
             default_alpha_rgb=cfg.overlay.default_alpha_rgb,
             default_alpha_depth=cfg.overlay.default_alpha_depth,
             default_alpha_seg=cfg.overlay.default_alpha_seg,
         )
+        self._panel_seg         = ViewerWidget()
+        self._panel_depth       = ViewerWidget()
 
         # ------------------------------------------------------------------ #
-        # Layout: browser (left) + right container (grid + control bar)
+        # Layout: browser (left) + 2×2 panel grid (right)
         #
-        #   QSplitter(Horizontal)          ← setCentralWidget
+        #   QSplitter(Horizontal)       ← setCentralWidget
         #     BrowserWidget
-        #     QWidget (right_container)
-        #       QSplitter(Vertical)        ← right_split
-        #         QSplitter(Horizontal)    ← top_row   [Overlay | RGB  ]
-        #         QSplitter(Horizontal)    ← bottom_row[Seg     | Depth]
-        #       OverlayControlWidget       ← controls (checkbox + sliders)
+        #     QSplitter(Vertical)       ← right_split
+        #       QSplitter(Horizontal)   ← top_row   [Overlay | LayerCtrl]
+        #       QSplitter(Horizontal)   ← bot_row   [Seg     | Depth    ]
         # ------------------------------------------------------------------ #
         top_row = QSplitter(Qt.Orientation.Horizontal)
         top_row.addWidget(self._panel_overlay)
-        top_row.addWidget(self._panel_rgb)
+        top_row.addWidget(self._panel_layer_ctrl)
+        top_row.setSizes([500, 500])
 
-        bottom_row = QSplitter(Qt.Orientation.Horizontal)
-        bottom_row.addWidget(self._panel_seg)
-        bottom_row.addWidget(self._panel_depth)
+        bot_row = QSplitter(Qt.Orientation.Horizontal)
+        bot_row.addWidget(self._panel_seg)
+        bot_row.addWidget(self._panel_depth)
+        bot_row.setSizes([500, 500])
 
         right_split = QSplitter(Qt.Orientation.Vertical)
         right_split.addWidget(top_row)
-        right_split.addWidget(bottom_row)
-
-        # Wrap the 4-panel grid + control bar in a plain widget so controls
-        # sit flush below the grid without consuming splitter space.
-        right_container = QWidget()
-        right_layout = QVBoxLayout(right_container)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
-        right_layout.addWidget(right_split, stretch=1)
-        right_layout.addWidget(self._controls)
+        right_split.addWidget(bot_row)
+        right_split.setSizes([500, 500])
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._browser)
-        splitter.addWidget(right_container)
-
-        # Give the browser its configured initial width; let the grid take
-        # the rest.  Use a large number for the right side so it naturally expands.
+        splitter.addWidget(right_split)
         splitter.setSizes([cfg.ui.browser_width, 9999])
 
-        # The splitter is the central widget; it fills the whole window.
         self.setCentralWidget(splitter)
 
         # ------------------------------------------------------------------ #
-        # Status bar (created on demand by QMainWindow, reference it now)
+        # Status bar
         # ------------------------------------------------------------------ #
-        self.statusBar()  # creates and shows it
+        self.statusBar()
 
         # ------------------------------------------------------------------ #
         # Signal wiring
@@ -134,7 +121,7 @@ class MainWindow(QMainWindow):
         self._image_loader.loaded.connect(self._on_loaded)
         self._image_loader.error.connect(self._on_error)
 
-        self._controls.params_changed.connect(self._on_params_changed)
+        self._panel_layer_ctrl.params_changed.connect(self._on_params_changed)
 
         # ------------------------------------------------------------------ #
         # Initial data scan (deferred to avoid blocking window display)
@@ -153,12 +140,10 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------------- #
 
     def _initial_scan(self) -> None:
-        """Run DataIndex.scan() after the event loop starts to avoid blocking window display."""
         self._all_entries = self._data_index.scan(Path(self._cfg.data.root), self._cfg.data)
         self._browser.set_entries(self._all_entries)
 
     def _on_entry_selected(self, entry: ImageEntry) -> None:
-        """Kick off async image loading when the user clicks a row."""
         self._current_entry = entry
         self.statusBar().showMessage(f"Loading {entry.frame_id} …")
         self._image_loader.load_async(entry)
@@ -166,18 +151,10 @@ class MainWindow(QMainWindow):
     def _on_loaded(
         self,
         rgb: np.ndarray,
-        depth: object,  # np.ndarray | None
-        seg: object,    # list[dict] | None
+        depth: object,
+        seg: object,
     ) -> None:
-        """Cache the freshly loaded data and compose the initial overlay.
-
-        NOTE: Full race condition fix requires image_loader to include a
-        generation number (or entry reference) in the loaded signal so we can
-        confirm the result still matches _current_entry.  Until that layer is
-        updated, we guard only against the case where _current_entry was cleared.
-        """
         if self._current_entry is None:
-            # No entry selected (cleared between load start and finish); discard.
             return
         self._last_rgb = rgb
         self._last_depth = depth      # type: ignore[assignment]
@@ -186,11 +163,11 @@ class MainWindow(QMainWindow):
         self._recompose()
 
     def _recompose(self, params: RenderParams | None = None) -> None:
-        """Re-render all four panels using cached data and current slider params."""
+        """Re-render all panels using cached data and current slider params."""
         if self._last_rgb is None:
             return
         if params is None:
-            params = self._controls.current_params()
+            params = self._panel_layer_ctrl.current_params()
 
         self._panel_overlay.display(
             self._renderer.compose(
@@ -201,9 +178,6 @@ class MainWindow(QMainWindow):
                 self._cfg,
             )
         )
-        self._panel_rgb.display(
-            self._renderer.compose_rgb(self._last_rgb)
-        )
         self._panel_seg.display(
             self._renderer.compose_seg(self._last_rgb, self._last_seg, self._cfg)
         )
@@ -212,25 +186,20 @@ class MainWindow(QMainWindow):
         )
 
     def _on_params_changed(self, params: RenderParams) -> None:
-        """Re-compose all panels when a slider moves (no disk I/O — uses cached arrays)."""
         self._recompose(params)
 
     def _on_error(self, msg: str) -> None:
-        """Show loader errors in the status bar for 5 seconds."""
         self.statusBar().showMessage(f"Error: {msg}", 5000)
 
     def _on_search_changed(self, query: str) -> None:
-        """Update search state and re-filter the entry list."""
         self._current_query = query
         self._apply_filter()
 
     def _on_sort_changed(self, sort_by: str) -> None:
-        """Update sort state and re-filter the entry list."""
         self._current_sort = sort_by
         self._apply_filter()
 
     def _apply_filter(self) -> None:
-        """Run DataIndex.filter() with the current query/sort and push to browser."""
         filtered = self._data_index.filter(
             self._all_entries,
             query=self._current_query,

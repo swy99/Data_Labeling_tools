@@ -1,4 +1,4 @@
-"""viewer_widget.py — Image display panel and overlay control bar."""
+"""viewer_widget.py — Image display panel and layer control panel."""
 
 from __future__ import annotations
 
@@ -67,8 +67,8 @@ class ViewerWidget(QWidget):
         self._scale_to_label()
 
 
-class OverlayControlWidget(QWidget):
-    """Horizontal control bar: checkbox + alpha slider for RGB, Depth, Seg.
+class LayerControlPanel(QWidget):
+    """Panel 2: alpha slider + Hide toggle for RGB, Depth, Seg layers.
 
     Signals
     -------
@@ -95,48 +95,52 @@ class OverlayControlWidget(QWidget):
         alpha_depth: float,
         alpha_seg: float,
     ) -> None:
-        root = QHBoxLayout(self)
-        root.setContentsMargins(8, 4, 8, 4)
-        root.setSpacing(24)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
         root.addStretch()
 
-        self._check_rgb, self._slider_rgb, _ = self._add_layer(root, "RGB", alpha_rgb)
-        self._check_depth, self._slider_depth, _ = self._add_layer(root, "Depth", alpha_depth)
-        self._check_seg, self._slider_seg, _ = self._add_layer(root, "Seg", alpha_seg)
+        self._check_rgb, self._slider_rgb = self._add_layer_row(root, "RGB", alpha_rgb)
+        self._check_depth, self._slider_depth = self._add_layer_row(root, "Depth", alpha_depth)
+        self._check_seg, self._slider_seg = self._add_layer_row(root, "Seg", alpha_seg)
 
         root.addStretch()
 
-    def _add_layer(
-        self, parent_layout: QHBoxLayout, label: str, default_alpha: float
-    ) -> tuple[QCheckBox, QSlider, QLabel]:
-        group = QWidget()
-        row = QHBoxLayout(group)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+    def _add_layer_row(
+        self,
+        parent_layout: QVBoxLayout,
+        label: str,
+        default_alpha: float,
+    ) -> tuple[QCheckBox, QSlider]:
+        row = QHBoxLayout()
+        row.setSpacing(8)
 
-        check = QCheckBox(label)
-        check.setChecked(True)
-        check.setFixedWidth(64)
+        name_lbl = QLabel(label)
+        name_lbl.setFixedWidth(42)
+
+        check = QCheckBox("Hide")
+        check.setChecked(False)
+        check.setFixedWidth(60)
 
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(0, 100)
         slider.setValue(int(round(default_alpha * 100)))
-        slider.setFixedWidth(110)
 
         readout = QLabel(f"{slider.value() / 100:.2f}")
-        readout.setFixedWidth(36)
+        readout.setFixedWidth(34)
         readout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         slider.valueChanged.connect(
             lambda val, lbl=readout: lbl.setText(f"{val / 100:.2f}")
         )
 
+        row.addWidget(name_lbl)
         row.addWidget(check)
         row.addWidget(slider)
         row.addWidget(readout)
-        parent_layout.addWidget(group)
 
-        return check, slider, readout
+        parent_layout.addLayout(row)
+        return check, slider
 
     def _connect_signals(self) -> None:
         for slider in (self._slider_rgb, self._slider_depth, self._slider_seg):
@@ -149,10 +153,10 @@ class OverlayControlWidget(QWidget):
 
     def current_params(self) -> RenderParams:
         return RenderParams(
-            alpha_rgb=self._slider_rgb.value() / 100,
-            alpha_depth=self._slider_depth.value() / 100,
-            alpha_seg=self._slider_seg.value() / 100,
-            show_rgb=self._check_rgb.isChecked(),
-            show_depth=self._check_depth.isChecked(),
-            show_seg=self._check_seg.isChecked(),
+            alpha_rgb=0.0 if self._check_rgb.isChecked() else self._slider_rgb.value() / 100,
+            alpha_depth=0.0 if self._check_depth.isChecked() else self._slider_depth.value() / 100,
+            alpha_seg=0.0 if self._check_seg.isChecked() else self._slider_seg.value() / 100,
+            show_rgb=not self._check_rgb.isChecked(),
+            show_depth=not self._check_depth.isChecked(),
+            show_seg=not self._check_seg.isChecked(),
         )
