@@ -1,0 +1,11 @@
+# 전체 무시
+*
+
+# 아래만 추적
+!.gitignore
+!README.md
+!check_status.py
+!batch_depth.py
+!batch_depth.py.txt
+!viewer/
+!viewer/**

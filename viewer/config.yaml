@@ -1,0 +1,28 @@
+data:
+  # WARNING: 절대 경로 하드코딩 — 환경이 바뀌면 이 값을 수정해야 합니다.
+  root: "C:/Docker/X-AnyLabeling/data"
+  depth_dir_name: "x-anylabeling-depth"
+  depth_suffix: "_depth.npy"
+
+depth:
+  colormap: "plasma"
+  value_range: null
+  unit: "meter"
+
+overlay:
+  default_alpha_rgb: 1.0
+  default_alpha_depth: 0.5
+  default_alpha_seg: 0.6
+
+seg:
+  label_colors:
+    ego: [255, 0, 0]
+    car: [0, 255, 0]
+    drivable_region: [0, 0, 255]
+    barrier: [255, 165, 0]
+  polygon_opacity: 0.4
+
+ui:
+  window_title: "AnyLabel Viewer"
+  browser_width: 400
+  default_sort: "name"
